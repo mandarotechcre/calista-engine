@@ -82,15 +82,13 @@ def predict(user_id):
     tanggal_max = tanggal_mulai + timedelta(days=pred_hari_max - 1)
 
     return jsonify({
-        "📊 Prediksi Siklus Berikutnya": {
-            "Panjang siklus": f"{pred_panjang} hari",
-            "Hari maksimal volume darah": f"{pred_hari_max} hari",
-            "Durasi haid": f"{pred_durasi} hari"
-        },
-        "📅 Prediksi Tanggal Penting Siklus Berikutnya": {
-            "Tanggal mulai haid": tanggal_mulai.strftime('%Y-%m-%d'),
-            "Tanggal akhir haid": tanggal_akhir.strftime('%Y-%m-%d'),
-            "Tanggal darah terbanyak": tanggal_max.strftime('%Y-%m-%d')
+        "predicted_cycle_length": pred_panjang,
+        "predicted_period_length": pred_durasi,
+        "predicted_peak_day": pred_hari_max,
+        "predicted_dates": {
+            "start_date": tanggal_mulai.strftime('%Y-%m-%d'),
+            "end_date": tanggal_akhir.strftime('%Y-%m-%d'),
+            "peak_date": tanggal_max.strftime('%Y-%m-%d')
         }
     })
 
@@ -105,6 +103,47 @@ def train_api(user_id):
     thread = threading.Thread(target=async_train)
     thread.start()
     return jsonify({"message": f"Training started asynchronously for user {user_id}."})
+
+@app.route('/add-cycle/<user_id>', methods=['POST'])
+def add_cycle(user_id):
+    path = os.path.join(DATA_ROOT, user_id)
+    csv_path = os.path.join(path, "model.csv")
+    os.makedirs(path, exist_ok=True)
+
+    # Ambil data dari body request
+    data = request.get_json()
+    required_fields = ['start_date', 'durasi', 'hari_max_volume', 'panjang_siklus']
+
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"Field '{field}' is required"}), 400
+
+    # Baca file CSV kalau sudah ada
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+        siklus_ke = df['siklus_ke'].max() + 1
+    else:
+        df = pd.DataFrame(columns=["user_id", "siklus_ke", "start_date", "durasi", "hari_max_volume", "panjang_siklus"])
+        siklus_ke = 1
+
+    # Tambahkan baris baru
+    new_row = {
+        "user_id": user_id,
+        "siklus_ke": siklus_ke,
+        "start_date": data["start_date"],
+        "durasi": int(data["durasi"]),
+        "hari_max_volume": int(data["hari_max_volume"]),
+        "panjang_siklus": int(data["panjang_siklus"])
+    }
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    df.to_csv(csv_path, index=False)
+
+    return jsonify({
+    "message": "Cycle data added successfully",
+    "siklus_ke": int(siklus_ke)
+}), 200
+
+
 
 # =========================
 # 🏁 Run Server
